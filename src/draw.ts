@@ -12,12 +12,12 @@ export interface DrawShape {
   piece?: DrawShapePiece;
   customSvg?: { html: string; center?: 'orig' | 'dest' | 'label' }; // 100 x 100 viewbox cenetered at [50,50]
   label?: { text: string; fill?: string }; // fill is in '#rrggbb' format
-  gradient?: Gradient; // Optional gradient with three colors and their percentages
 }
 
 export interface DrawModifiers {
   lineWidth?: number;
   hilite?: boolean;
+  gradient?: Gradient; // Optional gradient with three colors and their percentages
 }
 
 export interface DrawShapePiece {
