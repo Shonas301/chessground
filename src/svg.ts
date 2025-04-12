@@ -162,7 +162,7 @@ function pieceHash(piece: DrawShapePiece): Hash {
 }
 
 function modifiersHash(m: DrawModifiers): Hash {
-  return [m.lineWidth, m.hilite && '*'].filter(x => x).join(',');
+  return [m.lineWidth, m.hilite && '*',m.gradient && '*'].filter(x => x).join(',');
 }
 
 function textHash(s: string): Hash {
@@ -237,6 +237,7 @@ function hilite(brush: DrawBrush): DrawBrush {
     : hilites['hiliteWhite'];
 }
 
+// JASON HERE
 function renderArrow(
   s: DrawShape,
   brush: DrawBrush,
