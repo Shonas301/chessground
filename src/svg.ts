@@ -292,14 +292,19 @@ function renderArrow(
   current: boolean,
   shorten: boolean,
 ): SVGElement {
-  function renderLine(isHilite: boolean) {
+  // Helper to get the main SVG element
+  function getMainSvg(): SVGElement | null {
+    return document.querySelector('svg.cg-shapes') as SVGElement || document.querySelector('svg') as SVGElement;
+  }
+
+  function renderLine(isHilite: boolean, gradientId?: string) {
     const m = arrowMargin(shorten && !current),
       dx = to[0] - from[0],
       dy = to[1] - from[1],
       angle = Math.atan2(dy, dx),
       xo = Math.cos(angle) * m,
       yo = Math.sin(angle) * m;
-    return setAttributes(createElement('line'), {
+    const attrs: any = {
       stroke: isHilite ? hilite(brush).color : brush.color,
       'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
       'stroke-linecap': 'round',
@@ -309,29 +314,38 @@ function renderArrow(
       y1: from[1],
       x2: to[0] - xo,
       y2: to[1] - yo,
-    });
+    };
+    if (gradientId && !isHilite) {
+      attrs.stroke = `url(#${gradientId})`;
+    }
+    return setAttributes(createElement('line'), attrs);
   }
-  function gradientID(to: cg.NumberPair, from: cg.NumberPair): string {
-    const gradId = `cg-arrow-gradient-${s.orig}-${s.dest}-${to[0]}-${to[1]}-${from[0]}-${from[1]}-gradient`;
-    return gradId
+
+  // If no hilite, just render the line (with gradient if present)
+  if (!s.modifiers?.hilite) {
+    let gradientId: string | undefined;
+    if (s.modifiers?.gradient) {
+      gradientId = `cg-arrow-gradient-${s.orig}-${s.dest}`;
+      const svg = getMainSvg();
+      if (svg) createGradient(svg, s.modifiers.gradient, gradientId);
+    }
+    return renderLine(false, gradientId);
   }
-  if (!s.modifiers?.hilite) return renderLine(false);
 
-
+  // If hilite, render blurred and normal lines
   const g = createElement('g');
   let blurred;
+  let gradientId: string | undefined;
   if (s.modifiers?.gradient) {
-    const fill = createGradient(g, s.modifiers.gradient, gradientID(to, from));
-    blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)', fill: `url{#${fill})` });
+    gradientId = `cg-arrow-gradient-${s.orig}-${s.dest}`;
+    const svg = getMainSvg();
+    if (svg) createGradient(svg, s.modifiers.gradient, gradientId);
   }
-  else {
-    blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)'});
-  }
-
+  blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
   blurred.appendChild(filterBox(from, to));
-  blurred.appendChild(renderLine(true));
+  blurred.appendChild(renderLine(true)); // hilite blurred always solid color
   g.appendChild(blurred);
-  g.appendChild(renderLine(false));
+  g.appendChild(renderLine(false, gradientId)); // normal line, possibly gradient
   return g;
 }
 
