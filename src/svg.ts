@@ -1,6 +1,6 @@
 import { State } from './state.js';
 import { key2pos } from './util.js';
-import { Drawable, DrawShape, DrawShapePiece, DrawBrush, DrawBrushes, DrawModifiers } from './draw.js';
+import { Drawable, DrawShape, DrawShapePiece, DrawBrush, DrawBrushes, DrawModifiers, Gradient } from './draw.js';
 import { SyncableShape, Hash } from './sync.js';
 import * as cg from './types.js';
 
@@ -15,6 +15,23 @@ const hilites: { [name: string]: DrawBrush } = {
 };
 
 export { createElement, setAttributes };
+
+/*
+  -- DOM hierarchy --
+  <svg class="cg-shapes">      (<= svg)
+    <defs>
+      ...(for brushes)...
+    </defs>
+    <g>
+      ...(for arrows and circles)...
+    </g>
+  </svg>
+  <svg class="cg-custom-svgs"> (<= customSvg)
+    <g>
+      ...(for custom svgs)...
+    </g>
+  </svg>
+*/
 
 export function createDefs(): Element {
   const defs = createElement('defs');
@@ -57,23 +74,6 @@ export function renderSvg(state: State, shapesEl: SVGElement, customsEl: SVGElem
   const fullHash = shapes.map(sc => sc.hash).join(';');
   if (fullHash === state.drawable.prevSvgHash) return;
   state.drawable.prevSvgHash = fullHash;
-
-  /*
-    -- DOM hierarchy --
-    <svg class="cg-shapes">      (<= svg)
-      <defs>
-        ...(for brushes)...
-      </defs>
-      <g>
-        ...(for arrows and circles)...
-      </g>
-    </svg>
-    <svg class="cg-custom-svgs"> (<= customSvg)
-      <g>
-        ...(for custom svgs)...
-      </g>
-    </svg>
-  */
 
   const defsEl = shapesEl.querySelector('defs') as SVGElement;
 
@@ -237,6 +237,52 @@ function hilite(brush: DrawBrush): DrawBrush {
     : hilites['hiliteWhite'];
 }
 
+/**
+ * Create a linear gradient definition for an arrow, based on the Gradient interface.
+ * @param svg The SVG element to which the gradient should be added (should contain <defs>).
+ * @param gradient The Gradient object with colors and percentages.
+ * @param uniqueId A unique string to ensure gradient IDs are unique per arrow.
+ * @returns The gradient id (to be used as stroke)
+ */
+export function createGradient(svg: SVGElement, gradient: Gradient, uniqueId: string): string {
+  // Find or create <defs>
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  const gradId = `cg-arrow-gradient-${uniqueId}`;
+  // Remove any existing gradient with this id
+  const old = defs.querySelector(`#${gradId}`);
+  if (old) defs.removeChild(old);
+
+  const linear = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+  linear.setAttribute('id', gradId);
+  linear.setAttribute('x1', '0%');
+  linear.setAttribute('y1', '0%');
+  linear.setAttribute('x2', '100%');
+  linear.setAttribute('y2', '0%');
+
+  // Calculate cumulative offsets
+  const [p0, p1, _] = gradient.percentages;
+  const stops = [
+    { offset: '0%', color: gradient.colors[0] },
+    { offset: `${p0}%`, color: gradient.colors[0] },
+    { offset: `${p0}%`, color: gradient.colors[1] },
+    { offset: `${p0 + p1}%`, color: gradient.colors[1] },
+    { offset: `${p0 + p1}%`, color: gradient.colors[2] },
+    { offset: '100%', color: gradient.colors[2] },
+  ];
+  for (const stop of stops) {
+    const stopEl = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stopEl.setAttribute('offset', stop.offset);
+    stopEl.setAttribute('stop-color', stop.color);
+    linear.appendChild(stopEl);
+  }
+  defs.appendChild(linear);
+  return gradId;
+}
+
 // JASON HERE
 function renderArrow(
   s: DrawShape,
@@ -245,6 +291,8 @@ function renderArrow(
   to: cg.NumberPair,
   current: boolean,
   shorten: boolean,
+  svgEl?: SVGElement, // pass the SVG element for gradient creation
+  uniqueId?: string   // pass a unique id for the arrow
 ): SVGElement {
   function renderLine(isHilite: boolean) {
     const m = arrowMargin(shorten && !current),
@@ -253,8 +301,13 @@ function renderArrow(
       angle = Math.atan2(dy, dx),
       xo = Math.cos(angle) * m,
       yo = Math.sin(angle) * m;
+    let strokeValue = isHilite ? hilite(brush).color : brush.color;
+    if (s.modifiers?.gradient && svgEl && uniqueId) {
+      const gradId = createGradient(svgEl, s.modifiers.gradient, uniqueId);
+      strokeValue = `url(#${gradId})`;
+    }
     return setAttributes(createElement('line'), {
-      stroke: isHilite ? hilite(brush).color : brush.color,
+      stroke: strokeValue,
       'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
       'stroke-linecap': 'round',
       'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
