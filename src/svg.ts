@@ -291,8 +291,6 @@ function renderArrow(
   to: cg.NumberPair,
   current: boolean,
   shorten: boolean,
-  svgEl?: SVGElement, // pass the SVG element for gradient creation
-  uniqueId?: string   // pass a unique id for the arrow
 ): SVGElement {
   function renderLine(isHilite: boolean) {
     const m = arrowMargin(shorten && !current),
@@ -301,13 +299,8 @@ function renderArrow(
       angle = Math.atan2(dy, dx),
       xo = Math.cos(angle) * m,
       yo = Math.sin(angle) * m;
-    let strokeValue = isHilite ? hilite(brush).color : brush.color;
-    if (s.modifiers?.gradient && svgEl && uniqueId) {
-      const gradId = createGradient(svgEl, s.modifiers.gradient, uniqueId);
-      strokeValue = `url(#${gradId})`;
-    }
     return setAttributes(createElement('line'), {
-      stroke: strokeValue,
+      stroke: isHilite ? hilite(brush).color : brush.color,
       'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
       'stroke-linecap': 'round',
       'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
@@ -318,10 +311,23 @@ function renderArrow(
       y2: to[1] - yo,
     });
   }
+  function gradientID(to: cg.NumberPair, from: cg.NumberPair): string {
+    const gradId = `cg-arrow-gradient-${s.orig}-${s.dest}-${to[0]}-${to[1]}-${from[0]}-${from[1]}-gradient`;
+    return gradId
+  }
   if (!s.modifiers?.hilite) return renderLine(false);
 
+
   const g = createElement('g');
-  const blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
+  let blurred;
+  if (s.modifiers?.gradient) {
+    const fill = createGradient(g, s.modifiers.gradient, gradientID(to, from));
+    blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)', fill: `url{#${fill})` });
+  }
+  else {
+    blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)'});
+  }
+
   blurred.appendChild(filterBox(from, to));
   blurred.appendChild(renderLine(true));
   g.appendChild(blurred);
