@@ -1,6 +1,14 @@
 import { State } from './state.js';
 import { key2pos } from './util.js';
-import { Drawable, DrawShape, DrawShapePiece, DrawBrush, DrawBrushes, DrawModifiers, Gradient } from './draw.js';
+import {
+  Drawable,
+  DrawShape,
+  DrawShapePiece,
+  DrawBrush,
+  DrawBrushes,
+  DrawModifiers,
+  Gradient,
+} from './draw.js';
 import { SyncableShape, Hash } from './sync.js';
 import * as cg from './types.js';
 
@@ -162,7 +170,7 @@ function pieceHash(piece: DrawShapePiece): Hash {
 }
 
 function modifiersHash(m: DrawModifiers): Hash {
-  return [m.lineWidth, m.hilite && '*',m.gradient && '*'].filter(x => x).join(',');
+  return [m.lineWidth, m.hilite && '*', m.gradient && '*'].filter(x => x).join(',');
 }
 
 function textHash(s: string): Hash {
@@ -294,7 +302,9 @@ function renderArrow(
 ): SVGElement {
   // Helper to get the main SVG element
   function getMainSvg(): SVGElement | null {
-    return document.querySelector('svg.cg-shapes') as SVGElement || document.querySelector('svg') as SVGElement;
+    return (
+      (document.querySelector('svg.cg-shapes') as SVGElement) || (document.querySelector('svg') as SVGElement)
+    );
   }
 
   function renderLine(isHilite: boolean, gradientId?: string) {
@@ -304,19 +314,33 @@ function renderArrow(
       angle = Math.atan2(dy, dx),
       xo = Math.cos(angle) * m,
       yo = Math.sin(angle) * m;
-    const attrs: any = {
-      stroke: isHilite ? hilite(brush).color : brush.color,
-      'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
-      'stroke-linecap': 'round',
-      'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
-      opacity: s.modifiers?.hilite ? 1 : opacity(brush, current),
-      x1: from[0],
-      y1: from[1],
-      x2: to[0] - xo,
-      y2: to[1] - yo,
-    };
+    let attrs: any;
+    if (s.modifiers?.hilite) {
+      attrs = {
+        stroke: isHilite ? hilite(brush).color : brush.color,
+        'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
+        'stroke-linecap': 'round',
+        'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
+        opacity: s.modifiers?.hilite ? 1 : opacity(brush, current),
+        x1: from[0],
+        y1: from[1],
+        x2: to[0] - xo,
+        y2: to[1] - yo,
+      };
+    } else {
+      attrs = {
+        fill: `url(#${gradientId})`,
+        'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
+        'stroke-linecap': 'round',
+        'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
+        opacity: s.modifiers?.hilite ? 1 : opacity(brush, current),
+        x1: from[0],
+        y1: from[1],
+        x2: to[0] - xo,
+        y2: to[1] - yo,
+      };
+    }
     if (gradientId && !isHilite) {
-      attrs.stroke = `url(#${gradientId})`;
     }
     return setAttributes(createElement('line'), attrs);
   }
@@ -341,10 +365,12 @@ function renderArrow(
     const svg = getMainSvg();
     if (svg) createGradient(svg, s.modifiers.gradient, gradientId);
   }
-  blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
-  blurred.appendChild(filterBox(from, to));
-  blurred.appendChild(renderLine(true)); // hilite blurred always solid color
-  g.appendChild(blurred);
+  if (!s.modifiers?.gradient) {
+    blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
+    blurred.appendChild(filterBox(from, to));
+    blurred.appendChild(renderLine(true)); // hilite blurred always solid color
+    g.appendChild(blurred);
+  }
   g.appendChild(renderLine(false, gradientId)); // normal line, possibly gradient
   return g;
 }
