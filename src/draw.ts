@@ -3,6 +3,7 @@ import { unselect, cancelMove, getKeyAtDomPos, getSnappedKeyAtDomPos, whitePov }
 import { eventPosition, isRightButton } from './util.js';
 import * as cg from './types.js';
 
+
 export interface DrawShape {
   orig: cg.Key;
   dest?: cg.Key;
@@ -16,6 +17,7 @@ export interface DrawShape {
 export interface DrawModifiers {
   lineWidth?: number;
   hilite?: boolean;
+  gradient?: Gradient; // Optional gradient with three colors and their percentages
 }
 
 export interface DrawShapePiece {
@@ -59,6 +61,11 @@ export interface DrawCurrent {
   pos: cg.NumberPair; // relative current position
   brush: cg.BrushColor; // brush name for shape
   snapToValidMove: boolean; // whether to snap to valid piece moves
+}
+
+export interface Gradient {
+  colors: [string, string, string];
+  percentages: [number, number, number];
 }
 
 const brushes: cg.BrushColor[] = ['green', 'red', 'blue', 'yellow'];

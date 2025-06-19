@@ -1,6 +1,14 @@
 import { State } from './state.js';
 import { key2pos } from './util.js';
-import { Drawable, DrawShape, DrawShapePiece, DrawBrush, DrawBrushes, DrawModifiers } from './draw.js';
+import {
+  Drawable,
+  DrawShape,
+  DrawShapePiece,
+  DrawBrush,
+  DrawBrushes,
+  DrawModifiers,
+  Gradient,
+} from './draw.js';
 import { SyncableShape, Hash } from './sync.js';
 import * as cg from './types.js';
 
@@ -15,6 +23,23 @@ const hilites: { [name: string]: DrawBrush } = {
 };
 
 export { createElement, setAttributes };
+
+/*
+  -- DOM hierarchy --
+  <svg class="cg-shapes">      (<= svg)
+    <defs>
+      ...(for brushes)...
+    </defs>
+    <g>
+      ...(for arrows and circles)...
+    </g>
+  </svg>
+  <svg class="cg-custom-svgs"> (<= customSvg)
+    <g>
+      ...(for custom svgs)...
+    </g>
+  </svg>
+*/
 
 export function createDefs(): Element {
   const defs = createElement('defs');
@@ -57,23 +82,6 @@ export function renderSvg(state: State, shapesEl: SVGElement, customsEl: SVGElem
   const fullHash = shapes.map(sc => sc.hash).join(';');
   if (fullHash === state.drawable.prevSvgHash) return;
   state.drawable.prevSvgHash = fullHash;
-
-  /*
-    -- DOM hierarchy --
-    <svg class="cg-shapes">      (<= svg)
-      <defs>
-        ...(for brushes)...
-      </defs>
-      <g>
-        ...(for arrows and circles)...
-      </g>
-    </svg>
-    <svg class="cg-custom-svgs"> (<= customSvg)
-      <g>
-        ...(for custom svgs)...
-      </g>
-    </svg>
-  */
 
   const defsEl = shapesEl.querySelector('defs') as SVGElement;
 
@@ -162,7 +170,7 @@ function pieceHash(piece: DrawShapePiece): Hash {
 }
 
 function modifiersHash(m: DrawModifiers): Hash {
-  return [m.lineWidth, m.hilite && '*'].filter(x => x).join(',');
+  return [m.lineWidth, m.hilite && '*', m.gradient && '*'].filter(x => x).join(',');
 }
 
 function textHash(s: string): Hash {
@@ -237,6 +245,54 @@ function hilite(brush: DrawBrush): DrawBrush {
     : hilites['hiliteWhite'];
 }
 
+/**
+ * Create a linear gradient definition for an arrow, based on the Gradient interface.
+ * @param svg The SVG element to which the gradient should be added (should contain <defs>).
+ * @param gradient The Gradient object with colors and percentages.
+ * @param uniqueId A unique string to ensure gradient IDs are unique per arrow.
+ * @returns The gradient id (to be used as stroke)
+ */
+export function createGradient(svg: SVGElement, gradient: Gradient, uniqueId: string) {
+  // Find or create <defs>
+  let defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    svg.insertBefore(defs, svg.firstChild);
+  }
+  // Remove any existing gradient with this id
+  const old = defs.querySelector(`#${uniqueId}`);
+  if (old) defs.removeChild(old);
+
+  const linear = createElement('linearGradient');
+  linear.setAttribute('id', uniqueId);
+
+  linear.setAttribute('x1', '0%');
+  linear.setAttribute('y1', '0%');
+  linear.setAttribute('x2', '0%');
+  linear.setAttribute('y2', '100%');
+  linear.setAttribute('gradientUnits', 'userSpaceOnUse');
+
+  // Calculate cumulative offsets
+  const [p0, p1, _] = gradient.percentages;
+  const stops = [
+    { offset: '0%', color: gradient.colors[0] },
+    { offset: `${p0}%`, color: gradient.colors[1] },
+    { offset: `${p0 + p1}%`, color: gradient.colors[2] },
+    { offset: '100%', color: gradient.colors[2] },
+  ];
+  for (const stop of stops) {
+    const stopEl = createElement('stop');
+    stopEl.setAttribute('cgKey', uniqueId + 'stop' + stop.offset);
+    stopEl.setAttribute('id', uniqueId + 'stop' + stop.offset);
+    stopEl.setAttribute('offset', stop.offset);
+    stopEl.setAttribute('stop-color', stop.color);
+    stopEl.setAttribute('stop-opacity', '1');
+    linear.appendChild(stopEl);
+  }
+  defs.appendChild(linear);
+}
+
+// JASON HERE
 function renderArrow(
   s: DrawShape,
   brush: DrawBrush,
@@ -245,14 +301,21 @@ function renderArrow(
   current: boolean,
   shorten: boolean,
 ): SVGElement {
-  function renderLine(isHilite: boolean) {
+  // Helper to get the main SVG element
+  function getMainSvg(): SVGElement | null {
+    return (
+      (document.querySelector('svg.cg-shapes') as SVGElement) || (document.querySelector('svg') as SVGElement)
+    );
+  }
+
+  function renderLine(isHilite: boolean, gradientId?: string) {
     const m = arrowMargin(shorten && !current),
       dx = to[0] - from[0],
       dy = to[1] - from[1],
       angle = Math.atan2(dy, dx),
       xo = Math.cos(angle) * m,
       yo = Math.sin(angle) * m;
-    return setAttributes(createElement('line'), {
+    const attrs: any = {
       stroke: isHilite ? hilite(brush).color : brush.color,
       'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
       'stroke-linecap': 'round',
@@ -262,16 +325,39 @@ function renderArrow(
       y1: from[1],
       x2: to[0] - xo,
       y2: to[1] - yo,
-    });
+    };
+    if (gradientId) {
+      attrs.stroke = `url('#${gradientId}')`;
+    }
+    return setAttributes(createElement('line'), attrs);
   }
-  if (!s.modifiers?.hilite) return renderLine(false);
 
+  // If no hilite, just render the line (with gradient if present)
+  if (!s.modifiers?.hilite) {
+    let gradientId: string | undefined;
+    if (s.modifiers?.gradient) {
+      gradientId = `cg-arrow-gradient-${s.orig}-${s.dest}`;
+      const svg = getMainSvg();
+      if (svg) createGradient(svg, s.modifiers.gradient, gradientId);
+    }
+    return renderLine(false, gradientId);
+  }
+
+  // If hilite, render blurred and normal lines
   const g = createElement('g');
-  const blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
+  let blurred;
+  let gradientId: string | undefined;
+  if (s.modifiers?.gradient) {
+    gradientId = `cg-arrow-gradient-${s.orig}-${s.dest}`;
+    const svg = getMainSvg();
+    if (svg) createGradient(svg, s.modifiers.gradient, gradientId);
+  }
+  blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
   blurred.appendChild(filterBox(from, to));
-  blurred.appendChild(renderLine(true));
+  blurred.appendChild(renderLine(true)); // hilite blurred always solid color
   g.appendChild(blurred);
-  g.appendChild(renderLine(false));
+  g.appendChild(renderLine(false, gradientId)); // normal line, possibly gradient
+  console.log(g);
   return g;
 }
 
