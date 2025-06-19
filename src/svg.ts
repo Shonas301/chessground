@@ -252,43 +252,44 @@ function hilite(brush: DrawBrush): DrawBrush {
  * @param uniqueId A unique string to ensure gradient IDs are unique per arrow.
  * @returns The gradient id (to be used as stroke)
  */
-export function createGradient(svg: SVGElement, gradient: Gradient, uniqueId: string): string {
+export function createGradient(svg: SVGElement, gradient: Gradient, uniqueId: string) {
   // Find or create <defs>
   let defs = svg.querySelector('defs');
   if (!defs) {
     defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     svg.insertBefore(defs, svg.firstChild);
   }
-  const gradId = `cg-arrow-gradient-${uniqueId}`;
   // Remove any existing gradient with this id
-  const old = defs.querySelector(`#${gradId}`);
+  const old = defs.querySelector(`#${uniqueId}`);
   if (old) defs.removeChild(old);
 
-  const linear = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
-  linear.setAttribute('id', gradId);
+  const linear = createElement('linearGradient');
+  linear.setAttribute('id', uniqueId);
+
   linear.setAttribute('x1', '0%');
   linear.setAttribute('y1', '0%');
-  linear.setAttribute('x2', '100%');
-  linear.setAttribute('y2', '0%');
+  linear.setAttribute('x2', '0%');
+  linear.setAttribute('y2', '100%');
+  linear.setAttribute('gradientUnits', 'userSpaceOnUse');
 
   // Calculate cumulative offsets
   const [p0, p1, _] = gradient.percentages;
   const stops = [
     { offset: '0%', color: gradient.colors[0] },
-    { offset: `${p0}%`, color: gradient.colors[0] },
     { offset: `${p0}%`, color: gradient.colors[1] },
-    { offset: `${p0 + p1}%`, color: gradient.colors[1] },
     { offset: `${p0 + p1}%`, color: gradient.colors[2] },
     { offset: '100%', color: gradient.colors[2] },
   ];
   for (const stop of stops) {
-    const stopEl = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    const stopEl = createElement('stop');
+    stopEl.setAttribute('cgKey', uniqueId + 'stop' + stop.offset);
+    stopEl.setAttribute('id', uniqueId + 'stop' + stop.offset);
     stopEl.setAttribute('offset', stop.offset);
     stopEl.setAttribute('stop-color', stop.color);
+    stopEl.setAttribute('stop-opacity', '1');
     linear.appendChild(stopEl);
   }
   defs.appendChild(linear);
-  return gradId;
 }
 
 // JASON HERE
@@ -314,33 +315,19 @@ function renderArrow(
       angle = Math.atan2(dy, dx),
       xo = Math.cos(angle) * m,
       yo = Math.sin(angle) * m;
-    let attrs: any;
-    if (s.modifiers?.hilite) {
-      attrs = {
-        stroke: isHilite ? hilite(brush).color : brush.color,
-        'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
-        'stroke-linecap': 'round',
-        'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
-        opacity: s.modifiers?.hilite ? 1 : opacity(brush, current),
-        x1: from[0],
-        y1: from[1],
-        x2: to[0] - xo,
-        y2: to[1] - yo,
-      };
-    } else {
-      attrs = {
-        fill: `url(#${gradientId})`,
-        'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
-        'stroke-linecap': 'round',
-        'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
-        opacity: s.modifiers?.hilite ? 1 : opacity(brush, current),
-        x1: from[0],
-        y1: from[1],
-        x2: to[0] - xo,
-        y2: to[1] - yo,
-      };
-    }
-    if (gradientId && !isHilite) {
+    const attrs: any = {
+      stroke: isHilite ? hilite(brush).color : brush.color,
+      'stroke-width': lineWidth(brush, current) + (isHilite ? 0.04 : 0),
+      'stroke-linecap': 'round',
+      'marker-end': `url(#arrowhead-${isHilite ? hilite(brush).key : brush.key})`,
+      opacity: s.modifiers?.hilite ? 1 : opacity(brush, current),
+      x1: from[0],
+      y1: from[1],
+      x2: to[0] - xo,
+      y2: to[1] - yo,
+    };
+    if (gradientId) {
+      attrs.stroke = `url('#${gradientId}')`;
     }
     return setAttributes(createElement('line'), attrs);
   }
@@ -365,13 +352,12 @@ function renderArrow(
     const svg = getMainSvg();
     if (svg) createGradient(svg, s.modifiers.gradient, gradientId);
   }
-  if (!s.modifiers?.gradient) {
-    blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
-    blurred.appendChild(filterBox(from, to));
-    blurred.appendChild(renderLine(true)); // hilite blurred always solid color
-    g.appendChild(blurred);
-  }
+  blurred = setAttributes(createElement('g'), { filter: 'url(#cg-filter-blur)' });
+  blurred.appendChild(filterBox(from, to));
+  blurred.appendChild(renderLine(true)); // hilite blurred always solid color
+  g.appendChild(blurred);
   g.appendChild(renderLine(false, gradientId)); // normal line, possibly gradient
+  console.log(g);
   return g;
 }
 
